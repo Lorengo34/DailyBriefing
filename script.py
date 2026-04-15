@@ -4,24 +4,26 @@ import os
 import re
 from datetime import datetime
 
-# -- Configurazione feed RSS --
+# ── Configurazione feed RSS ──────────────────────────────────────────────────
 RSS_FEEDS = {
     "ANSA": "https://www.ansa.it/sito/ansait_rss.xml",
     "Sky TG24": "https://tg24.sky.it/rss/cronaca.xml",
     "Il Sole 24 Ore": "https://www.ilsole24ore.com/rss/mondo.xml",
 }
 
-MAX_ITEMS_PER_FEED = 15
+MAX_ITEMS_PER_FEED = 15   # quante notizie leggere per fonte
+
 
 def fetch_news() -> list[dict]:
+    """Legge tutti i feed RSS e restituisce una lista di notizie {source, title, summary}."""
     news = []
     for source, url in RSS_FEEDS.items():
         try:
             feed = feedparser.parse(url)
             for entry in feed.entries[:MAX_ITEMS_PER_FEED]:
-                title = entry.get("title", "").strip()
+                title   = entry.get("title", "").strip()
                 summary = entry.get("summary", entry.get("description", "")).strip()
-                import re
+                # Rimuove tag HTML semplici dal sommario
                 summary = re.sub(r"<[^>]+>", " ", summary).strip()
                 summary = re.sub(r"\s{2,}", " ", summary)
                 if title:
@@ -31,80 +33,234 @@ def fetch_news() -> list[dict]:
             print(f"  ✗ Errore leggendo {source}: {e}")
     return news
 
+
 def build_briefing(news: list[dict]) -> str:
+    """Invia le notizie a Claude e ottiene il briefing sintetizzato."""
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+
+    # Formatta le notizie come testo da passare al modello
     news_block = "\n\n".join(
         f"[{item['source']}]\nTitolo: {item['title']}\nSommario: {item['summary']}"
         for item in news
     )
+
     system_prompt = (
         "Sei un giornalista analitico. Crea un briefing delle notizie più importanti di oggi "
         "in circa 600 parole. Usa un tono asciutto, evita il clickbait, raggruppa le notizie "
         "per temi (Politica, Cronaca, Mondo) e scarta i duplicati. "
-        "Scrivi in italiano. Usa il grassetto markdown (es: **parola**) per i concetti chiave. "
-        "Non usare elenchi. I titoli delle sezioni devono essere in maiuscolo seguiti da due punti."
+        "Scrivi in italiano. Usa il grassetto markdown (**testo**) per i concetti chiave. "
+        "I titoli delle sezioni devono essere in maiuscolo seguiti da due punti."
     )
+
     message = client.messages.create(
-        model="claude-3-5-sonnet-20240620",
+        model="claude-3-5-sonnet-latest",
         max_tokens=2000,
         system=system_prompt,
-        messages=[{"role": "user", "content": f"Ecco le notizie di oggi:\n\n{news_block}"}],
+        messages=[
+            {"role": "user", "content": f"Ecco le notizie di oggi:\n\n{news_block}"}
+        ],
     )
     return message.content[0].text
 
+
 def render_html(briefing: str) -> str:
-    now = datetime.utcnow()
-    date_it = now.strftime("%-d %B %Y").replace("January","gennaio").replace("February","febbraio").replace("March","marzo").replace("April","aprile").replace("May","maggio").replace("June","giugno").replace("July","luglio").replace("August","agosto").replace("September","settembre").replace("October","ottobre").replace("November","novembre").replace("December","dicembre")
-    time_utc = now.strftime("%H:%M UTC")
+    """Genera l'HTML della pagina a partire dal testo del briefing."""
+    now       = datetime.utcnow()
+    date_it   = now.strftime("%-d %B %Y").replace(
+        "January","gennaio").replace("February","febbraio").replace(
+        "March","marzo").replace("April","aprile").replace(
+        "May","maggio").replace("June","giugno").replace(
+        "July","luglio").replace("August","agosto").replace(
+        "September","settembre").replace("October","ottobre").replace(
+        "November","novembre").replace("December","dicembre")
+    time_utc  = now.strftime("%H:%M UTC")
+
+    # Converte il testo in paragrafi HTML
     import html as html_lib
     paragraphs_html = ""
     for line in briefing.strip().split("\n"):
         line = line.strip()
-        if not line: continue
+        if not line:
+            continue
         
-        # Converte il grassetto **testo** in <strong>testo</strong>
+        # --- MODIFICA GRASSETTO ---
         line = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", line)
         
+        # Linee in maiuscolo → heading di sezione
         if line.isupper() or (line.endswith(":") and len(line) < 40 and line == line.upper()):
             paragraphs_html += f'<h2 class="section-title">{line}</h2>\n'
         else:
             paragraphs_html += f'<p>{line}</p>\n'
-            
-    sources_list = "".join(f'<li><a href="{url}" target="_blank">{name}</a></li>' for name, url in RSS_FEEDS.items())
+
+    sources_list = "".join(
+        f'<li><a href="{url}" target="_blank" rel="noopener">{name}</a></li>'
+        for name, url in RSS_FEEDS.items()
+    )
+
     return f"""<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Briefing — {date_it}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" />
+  <title>Briefing Quotidiano — {date_it}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&family=Source+Sans+3:wght@300;400;600&display=swap" rel="stylesheet" />
+
   <style>
-    body {{ background: #faf8f4; color: #1a1a1a; font-family: 'Source Sans 3', sans-serif; line-height: 1.75; padding: 2rem 1.25rem; }}
-    .wrapper {{ max-width: 680px; margin: 0 auto; }}
-    header {{ border-top: 3px solid #1a1a1a; padding-top: 2rem; margin-bottom: 2.5rem; }}
-    h1 {{ font-family: 'Libre Baskerville', serif; font-size: 2.5rem; font-weight: 700; }}
-    .section-title {{ color: #c0392b; text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.15em; margin-top: 2.2rem; border-bottom: 1px solid #ddd8ce; }}
-    p {{ font-family: 'Libre Baskerville', serif; margin-bottom: 1.1rem; }}
-    strong {{ font-weight: 700; color: #000; }}
-    footer {{ margin-top: 3.5rem; padding-top: 1rem; border-top: 1px solid #ddd8ce; font-size: 0.8rem; color: #555; }}
+    /* ── Reset & base ─────────────────────────────────── */
+    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
+
+    :root {{
+      --ink:        #1a1a1a;
+      --ink-light:  #555;
+      --paper:      #faf8f4;
+      --rule:       #ddd8ce;
+      --accent:     #c0392b;
+      --max-w:      680px;
+    }}
+
+    body {{
+      background: var(--paper);
+      color: var(--ink);
+      font-family: 'Source Sans 3', sans-serif;
+      font-weight: 300;
+      font-size: clamp(16px, 2.2vw, 18px);
+      line-height: 1.75;
+      padding: 2rem 1.25rem 4rem;
+    }}
+
+    .wrapper {{
+      max-width: var(--max-w);
+      margin: 0 auto;
+    }}
+
+    header {{
+      border-top: 3px solid var(--ink);
+      padding-top: 2rem;
+      margin-bottom: 2.5rem;
+    }}
+
+    .eyebrow {{
+      font-family: 'Source Sans 3', sans-serif;
+      font-weight: 600;
+      font-size: 0.72rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.4rem;
+    }}
+
+    h1 {{
+      font-family: 'Libre Baskerville', Georgia, serif;
+      font-size: clamp(2rem, 6vw, 3rem);
+      font-weight: 700;
+      line-height: 1.1;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }}
+
+    .dateline {{
+      margin-top: 0.6rem;
+      font-size: 0.82rem;
+      color: var(--ink-light);
+      letter-spacing: 0.04em;
+    }}
+
+    .rule {{
+      border: none;
+      border-top: 1px solid var(--rule);
+      margin: 2rem 0;
+    }}
+
+    .briefing-body h2.section-title {{
+      font-family: 'Source Sans 3', sans-serif;
+      font-weight: 600;
+      font-size: 0.72rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-top: 2.2rem;
+      margin-bottom: 0.75rem;
+      padding-bottom: 0.4rem;
+      border-bottom: 1px solid var(--rule);
+    }}
+
+    .briefing-body p {{
+      font-family: 'Libre Baskerville', Georgia, serif;
+      font-size: 1rem;
+      line-height: 1.8;
+      margin-bottom: 1.1rem;
+      color: var(--ink);
+    }}
+
+    /* Stile Grassetto */
+    strong {{
+      font-weight: 700;
+      color: #000;
+    }}
+
+    footer {{
+      margin-top: 3.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--rule);
+      font-size: 0.78rem;
+      color: var(--ink-light);
+    }}
+
+    footer ul {{
+      list-style: none;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1.25rem;
+      margin-top: 0.4rem;
+    }}
+
+    footer a {{
+      color: var(--ink-light);
+      text-decoration: none;
+      border-bottom: 1px solid var(--rule);
+      transition: color 0.15s;
+    }}
+    footer a:hover {{ color: var(--accent); border-color: var(--accent); }}
+
+    @media (max-width: 480px) {{
+      body {{ padding: 1.25rem 1rem 3rem; }}
+      h1   {{ font-size: 2rem; }}
+    }}
   </style>
 </head>
 <body>
   <div class="wrapper">
-    <header><h1>Le notizie di oggi</h1><p>{date_it} — {time_utc}</p></header>
-    <article class="briefing-body">{paragraphs_html}</article>
-    <footer><p>Fonti: {sources_list}</p></footer>
+    <header>
+      <p class="eyebrow">Briefing Quotidiano</p>
+      <h1>Le notizie di oggi</h1>
+      <p class="dateline">{date_it} &mdash; aggiornato alle {time_utc}</p>
+    </header>
+    <hr class="rule" />
+    <article class="briefing-body">
+      {paragraphs_html}
+    </article>
+    <footer>
+      <p>Fonti:</p>
+      <ul>{sources_list}</ul>
+      <p style="margin-top:0.75rem">Generato automaticamente con Claude AI · contenuto sintetizzato, non editoriale.</p>
+    </footer>
   </div>
 </body>
-</html>"""
+</html>
+"""
+
 
 def main():
-    print("📰 Avvio...")
+    print("📰 Briefing Quotidiano — avvio")
     news = fetch_news()
     briefing = build_briefing(news)
+    html = render_html(briefing)
     with open("index.html", "w", encoding="utf-8") as f:
-        f.write(render_html(briefing))
+        f.write(html)
     print("✅ Completato.")
+
 
 if __name__ == "__main__":
     main()
