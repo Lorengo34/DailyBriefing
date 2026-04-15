@@ -13,6 +13,7 @@ RSS_FEEDS = {
 
 MAX_ITEMS_PER_FEED = 15   # quante notizie leggere per fonte
 
+
 def fetch_news() -> list[dict]:
     """Legge tutti i feed RSS e restituisce una lista di notizie {source, title, summary}."""
     news = []
@@ -32,6 +33,7 @@ def fetch_news() -> list[dict]:
             print(f"  ✗ Errore leggendo {source}: {e}")
     return news
 
+
 def build_briefing(news: list[dict]) -> str:
     """Invia le notizie a Claude e ottiene il briefing sintetizzato."""
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
@@ -45,17 +47,13 @@ def build_briefing(news: list[dict]) -> str:
     system_prompt = (
         "Sei un giornalista analitico. Crea un briefing delle notizie più importanti di oggi "
         "in circa 600 parole. Usa un tono asciutto, evita il clickbait, raggruppa le notizie "
-        "per temi (POLITICA, CRONACA, MONDO) e scarta i duplicati. "
-        "REGOLE DI FORMATTAZIONE:\n"
-        "- Scrivi solo in PARAGRAFI DISCORSIVI.\n"
-        "- NON usare assolutamente elenchi puntati o liste.\n"
-        "- Usa il GRASSETTO (es: **parola**) per i nomi propri e i concetti chiave.\n"
-        "- Scrivi in italiano. I titoli delle sezioni devono essere in MAIUSCOLO seguiti da due punti."
+        "per temi (Politica, Cronaca, Mondo) e scarta i duplicati. "
+        "Scrivi in italiano. Usa il GRASSETTO (esempio: **parola**) per evidenziare i concetti chiave. "
+        "Non usare elenchi puntati. I titoli delle sezioni devono essere in maiuscolo seguiti da due punti."
     )
 
-        message = client.messages.create(
-        model="claude-3-5-haiku-latest", 
-        max_tokens=2000,
+    message = client.messages.create(
+        model="claude-3-5-sonnet-20240620",
         max_tokens=2000,
         system=system_prompt,
         messages=[
@@ -63,6 +61,7 @@ def build_briefing(news: list[dict]) -> str:
         ],
     )
     return message.content[0].text
+
 
 def render_html(briefing: str) -> str:
     """Genera l'HTML della pagina a partire dal testo del briefing."""
@@ -83,12 +82,11 @@ def render_html(briefing: str) -> str:
         line = line.strip()
         if not line:
             continue
-        
-        # Gestione Grassetto (converte **testo** in <strong>testo</strong>)
+            
+        # --- UNICA MODIFICA: Conversione grassetto ---
         line = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", line)
         
-        escaped = line # Usiamo la linea con i tag strong già inseriti
-        
+        escaped = line
         # Linee in maiuscolo → heading di sezione
         if line.isupper() or (line.endswith(":") and len(line) < 40 and line == line.upper()):
             paragraphs_html += f'<h2 class="section-title">{escaped}</h2>\n'
@@ -176,6 +174,7 @@ def render_html(briefing: str) -> str:
       margin: 2rem 0;
     }}
 
+    /* ── Article body ─────────────────────────────────── */
     .briefing-body h2.section-title {{
       font-family: 'Source Sans 3', sans-serif;
       font-weight: 600;
@@ -197,11 +196,13 @@ def render_html(briefing: str) -> str:
       color: var(--ink);
     }}
 
+    /* Aggiunta stile grassetto */
     strong {{
       font-weight: 700;
       color: #000;
     }}
 
+    /* ── Footer ───────────────────────────────────────── */
     footer {{
       margin-top: 3.5rem;
       padding-top: 1.25rem;
@@ -226,6 +227,7 @@ def render_html(briefing: str) -> str:
     }}
     footer a:hover {{ color: var(--accent); border-color: var(--accent); }}
 
+    /* ── Responsive fine-tuning ───────────────────────── */
     @media (max-width: 480px) {{
       body {{ padding: 1.25rem 1rem 3rem; }}
       h1   {{ font-size: 2rem; }}
@@ -234,34 +236,50 @@ def render_html(briefing: str) -> str:
 </head>
 <body>
   <div class="wrapper">
+
     <header>
       <p class="eyebrow">Briefing Quotidiano</p>
       <h1>Le notizie di oggi</h1>
       <p class="dateline">{date_it} &mdash; aggiornato alle {time_utc}</p>
     </header>
+
     <hr class="rule" />
+
     <article class="briefing-body">
       {paragraphs_html}
     </article>
+
     <footer>
       <p>Fonti:</p>
       <ul>{sources_list}</ul>
-      <p style="margin-top:0.75rem">Generato automaticamente con Claude AI · contenuto sintetizzato.</p>
+      <p style="margin-top:0.75rem">Generato automaticamente con Claude AI · contenuto sintetizzato, non editoriale.</p>
     </footer>
+
   </div>
 </body>
 </html>
 """
 
+
 def main():
     print("📰 Briefing Quotidiano — avvio")
+
+    print("\n1/3  Lettura feed RSS…")
     news = fetch_news()
-    print(f"  Totale notizie: {len(news)}")
+    print(f"      Totale notizie raccolte: {len(news)}")
+
+    print("\n2/3  Generazione briefing con Claude…")
     briefing = build_briefing(news)
+    print(f"      Briefing generato ({len(briefing)} caratteri)")
+
+    print("\n3/3  Scrittura index.html…")
     html = render_html(briefing)
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(html)
-    print("✅ Completato.")
+    print("      ✓ index.html salvato")
+
+    print("\n✅  Completato.")
+
 
 if __name__ == "__main__":
     main()
