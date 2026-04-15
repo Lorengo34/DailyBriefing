@@ -1,13 +1,12 @@
 import feedparser
 import anthropic
 import os
-import re
 from datetime import datetime
 
 # ── Configurazione feed RSS ──────────────────────────────────────────────────
 RSS_FEEDS = {
-    "ANSA": "https://www.ansa.it/sito/ansait_rss.xml",
-    "Sky TG24": "https://tg24.sky.it/rss/cronaca.xml",
+    "ANSA":         "https://www.ansa.it/sito/ansait_rss.xml",
+    "Sky TG24":     "https://tg24.sky.it/rss/home.xml",
     "Il Sole 24 Ore": "https://www.ilsole24ore.com/rss/mondo.xml",
 }
 
@@ -24,6 +23,7 @@ def fetch_news() -> list[dict]:
                 title   = entry.get("title", "").strip()
                 summary = entry.get("summary", entry.get("description", "")).strip()
                 # Rimuove tag HTML semplici dal sommario
+                import re
                 summary = re.sub(r"<[^>]+>", " ", summary).strip()
                 summary = re.sub(r"\s{2,}", " ", summary)
                 if title:
@@ -44,16 +44,20 @@ def build_briefing(news: list[dict]) -> str:
         for item in news
     )
 
-    system_prompt = (
-        "Sei un giornalista analitico. Crea un briefing delle notizie più importanti di oggi "
-        "in circa 600 parole. Usa un tono asciutto, evita il clickbait, raggruppa le notizie "
-        "per temi (Politica, Cronaca, Mondo) e scarta i duplicati. "
-        "Scrivi in italiano. Usa il grassetto markdown (**testo**) per i concetti chiave. "
-        "I titoli delle sezioni devono essere in maiuscolo seguiti da due punti."
+system_prompt = (
+        "Sei un giornalista analitico esperto in briefing sintetici. "
+        "Il tuo compito è riassumere le notizie fornite seguendo RIGOROSAMENTE queste regole:\n\n"
+        "1. FORMATO: Scrivi esclusivamente in PARAGRAFI DISCORSIVI. Non usare mai elenchi puntati o liste.\n"
+        "2. ENFASI: Usa il grassetto markdown (esempio: **parola**) per evidenziare nomi propri, "
+        "cifre importanti e concetti chiave all'interno delle frasi.\n"
+        "3. STRUTTURA: Dividi il testo in sezioni (es: POLITICA, CRONACA, MONDO). "
+        "Scrivi il titolo della sezione in MAIUSCOLO seguito da due punti su una riga separata.\n"
+        "4. STILE: Tono asciutto, professionale, evita ripetizioni e clickbait.\n"
+        "5. LINGUA: Scrivi tutto in italiano."
     )
 
     message = client.messages.create(
-        model="claude-3-5-sonnet-latest",
+        model="claude-opus-4-5",
         max_tokens=2000,
         system=system_prompt,
         messages=[
@@ -82,15 +86,12 @@ def render_html(briefing: str) -> str:
         line = line.strip()
         if not line:
             continue
-        
-        # --- MODIFICA GRASSETTO ---
-        line = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", line)
-        
+        escaped = html_lib.escape(line)
         # Linee in maiuscolo → heading di sezione
         if line.isupper() or (line.endswith(":") and len(line) < 40 and line == line.upper()):
-            paragraphs_html += f'<h2 class="section-title">{line}</h2>\n'
+            paragraphs_html += f'<h2 class="section-title">{escaped}</h2>\n'
         else:
-            paragraphs_html += f'<p>{line}</p>\n'
+            paragraphs_html += f'<p>{escaped}</p>\n'
 
     sources_list = "".join(
         f'<li><a href="{url}" target="_blank" rel="noopener">{name}</a></li>'
@@ -130,11 +131,13 @@ def render_html(briefing: str) -> str:
       padding: 2rem 1.25rem 4rem;
     }}
 
+    /* ── Layout container ─────────────────────────────── */
     .wrapper {{
       max-width: var(--max-w);
       margin: 0 auto;
     }}
 
+    /* ── Masthead ─────────────────────────────────────── */
     header {{
       border-top: 3px solid var(--ink);
       padding-top: 2rem;
@@ -173,6 +176,7 @@ def render_html(briefing: str) -> str:
       margin: 2rem 0;
     }}
 
+    /* ── Article body ─────────────────────────────────── */
     .briefing-body h2.section-title {{
       font-family: 'Source Sans 3', sans-serif;
       font-weight: 600;
@@ -194,12 +198,7 @@ def render_html(briefing: str) -> str:
       color: var(--ink);
     }}
 
-    /* Stile Grassetto */
-    strong {{
-      font-weight: 700;
-      color: #000;
-    }}
-
+    /* ── Footer ───────────────────────────────────────── */
     footer {{
       margin-top: 3.5rem;
       padding-top: 1.25rem;
@@ -224,6 +223,7 @@ def render_html(briefing: str) -> str:
     }}
     footer a:hover {{ color: var(--accent); border-color: var(--accent); }}
 
+    /* ── Responsive fine-tuning ───────────────────────── */
     @media (max-width: 480px) {{
       body {{ padding: 1.25rem 1rem 3rem; }}
       h1   {{ font-size: 2rem; }}
@@ -232,20 +232,25 @@ def render_html(briefing: str) -> str:
 </head>
 <body>
   <div class="wrapper">
+
     <header>
       <p class="eyebrow">Briefing Quotidiano</p>
       <h1>Le notizie di oggi</h1>
       <p class="dateline">{date_it} &mdash; aggiornato alle {time_utc}</p>
     </header>
+
     <hr class="rule" />
+
     <article class="briefing-body">
       {paragraphs_html}
     </article>
+
     <footer>
       <p>Fonti:</p>
       <ul>{sources_list}</ul>
       <p style="margin-top:0.75rem">Generato automaticamente con Claude AI · contenuto sintetizzato, non editoriale.</p>
     </footer>
+
   </div>
 </body>
 </html>
@@ -254,12 +259,22 @@ def render_html(briefing: str) -> str:
 
 def main():
     print("📰 Briefing Quotidiano — avvio")
+
+    print("\n1/3  Lettura feed RSS…")
     news = fetch_news()
+    print(f"     Totale notizie raccolte: {len(news)}")
+
+    print("\n2/3  Generazione briefing con Claude…")
     briefing = build_briefing(news)
+    print(f"     Briefing generato ({len(briefing)} caratteri)")
+
+    print("\n3/3  Scrittura index.html…")
     html = render_html(briefing)
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(html)
-    print("✅ Completato.")
+    print("     ✓ index.html salvato")
+
+    print("\n✅  Completato.")
 
 
 if __name__ == "__main__":
