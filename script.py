@@ -54,7 +54,7 @@ def build_briefing(news: list[dict]) -> str:
 
     message = client.messages.create(
         model="claude-opus-4-5",
-        max_tokens=1200,
+        max_tokens=2000,
         system=system_prompt,
         messages=[
             {"role": "user", "content": f"Ecco le notizie di oggi:\n\n{news_block}"}
