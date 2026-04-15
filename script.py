@@ -6,7 +6,7 @@ from datetime import datetime
 # ── Configurazione feed RSS ──────────────────────────────────────────────────
 RSS_FEEDS = {
     "ANSA":         "https://www.ansa.it/sito/ansait_rss.xml",
-    "Sky TG24":     "https://tg24.sky.it/rss/home.xml",
+    "Sky TG24":     "https://tg24.sky.it/rss/cronaca.xml",
     "Il Sole 24 Ore": "https://www.ilsole24ore.com/rss/mondo.xml",
 }
 
