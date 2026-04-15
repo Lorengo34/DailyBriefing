@@ -45,16 +45,20 @@ def build_briefing(news: list[dict]) -> str:
     )
 
     system_prompt = (
-        "Sei un giornalista analitico. Crea un briefing delle notizie più importanti di oggi "
-        "in circa 600 parole. Usa un tono asciutto, evita il clickbait, raggruppa le notizie "
-        "per temi (Politica, Cronaca, Mondo) e scarta i duplicati. "
-        "Scrivi in italiano. Non usare markdown, solo testo piano con i titoli delle sezioni "
-        "in maiuscolo seguiti da due punti."
+        "Sei un giornalista analitico esperto in briefing sintetici. "
+        "Il tuo compito è riassumere le notizie fornite seguendo RIGOROSAMENTE queste regole:\n\n"
+        "1. FORMATO: Scrivi esclusivamente in PARAGRAFI DISCORSIVI. Non usare mai elenchi puntati o liste.\n"
+        "2. ENFASI: Usa il grassetto markdown (esempio: **parola**) per evidenziare nomi propri, "
+        "cifre importanti e concetti chiave all'interno delle frasi.\n"
+        "3. STRUTTURA: Dividi il testo in sezioni (es: POLITICA, CRONACA, MONDO). "
+        "Scrivi il titolo della sezione in MAIUSCOLO seguito da due punti su una riga separata.\n"
+        "4. STILE: Tono asciutto, professionale, evita ripetizioni e clickbait.\n"
+        "5. LINGUA: Scrivi tutto in italiano."
     )
 
     message = client.messages.create(
         model="claude-opus-4-5",
-        max_tokens=1200,
+        max_tokens=2000,
         system=system_prompt,
         messages=[
             {"role": "user", "content": f"Ecco le notizie di oggi:\n\n{news_block}"}
