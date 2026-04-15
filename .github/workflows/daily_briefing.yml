@@ -3,7 +3,7 @@ name: Briefing Quotidiano
 on:
   schedule:
     # Ogni giorno alle 12:00 UTC
-    - cron: "0 12 * * *"
+    - cron: "0 5 * * *"
   # Permette anche l'esecuzione manuale dalla tab Actions
   workflow_dispatch:
 
