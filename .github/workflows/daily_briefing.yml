@@ -1,0 +1,46 @@
+name: Briefing Quotidiano
+
+on:
+  schedule:
+    # Ogni giorno alle 12:00 UTC
+    - cron: "0 12 * * *"
+  # Permette anche l'esecuzione manuale dalla tab Actions
+  workflow_dispatch:
+
+jobs:
+  genera-briefing:
+    runs-on: ubuntu-latest
+    # Permessi necessari per fare push su GitHub Pages
+    permissions:
+      contents: write
+
+    steps:
+      # 1. Checkout del repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Configura Python
+      - name: Configura Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # 3. Installa le dipendenze
+      - name: Installa dipendenze
+        run: pip install -r requirements.txt
+
+      # 4. Esegue lo script (la chiave viene iniettata come variabile d'ambiente)
+      - name: Genera index.html
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python script.py
+
+      # 5. Commit e push automatico di index.html
+      - name: Commit e push index.html
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          # Committa solo se c'è qualcosa di nuovo
+          git diff --cached --quiet || git commit -m "briefing: $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
