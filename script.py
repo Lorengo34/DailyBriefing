@@ -53,8 +53,9 @@ def build_briefing(news: list[dict]) -> str:
         "- Scrivi in italiano. I titoli delle sezioni devono essere in MAIUSCOLO seguiti da due punti."
     )
 
-    message = client.messages.create(
-        model="claude-3-haiku-20240307", # Modello economico
+        message = client.messages.create(
+        model="claude-3-5-haiku-latest", 
+        max_tokens=2000,
         max_tokens=2000,
         system=system_prompt,
         messages=[
